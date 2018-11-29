@@ -153,7 +153,14 @@ class LanguageIDModel(object):
         self.languages = ["English", "Spanish", "Finnish", "Dutch", "Polish"]
 
         # Initialize your model parameters here
-        "*** YOUR CODE HERE ***"
+        self.batch_size = 10
+        self.learning_rate = -0.0075
+        self.weights = nn.Parameter(self.num_chars, 150)
+        self.function_bias = nn.Parameter(1,150)
+        self.hidden_leaf_village = nn.Parameter(150,150)
+        self.result_weight = nn.Parameter(150, 5)
+        self.layer2 = nn.Parameter(150,150)
+        self.bias2 = nn.Parameter(1,150)
 
     def run(self, xs):
         """
@@ -184,8 +191,17 @@ class LanguageIDModel(object):
             A node with shape (batch_size x 5) containing predicted scores
                 (also called logits)
         """
-        "*** YOUR CODE HERE ***"
-
+        z = nn.Linear(xs[0], self.weights)
+        h = nn.AddBias(z,self.function_bias)
+        h = nn.AddBias(nn.Linear(nn.ReLU(h), self.layer2), self.bias2)
+        first = True
+        for i in xs:
+            if first:
+                first = False
+                continue
+            z = nn.Add(nn.Linear(i, self.weights), nn.Linear(h, self.hidden_leaf_village))
+            h = nn.AddBias(nn.ReLU(z), self.function_bias)
+        return nn.Linear(h, self.result_weight)
     def get_loss(self, xs, y):
         """
         Computes the loss for a batch of examples.
@@ -200,10 +216,26 @@ class LanguageIDModel(object):
             y: a node with shape (batch_size x 5)
         Returns: a loss node
         """
-        "*** YOUR CODE HERE ***"
+        return nn.SoftmaxLoss(self.run(xs), y)
 
     def train(self, dataset):
         """
         Trains the model.
         """
-        "*** YOUR CODE HERE ***"
+        
+        iters = 10
+        count = 0
+        for i in range(iters):
+            if i > 7:
+                self.learning_rate = -0.001
+            for xs, y in dataset.iterate_once(self.batch_size):
+                loss = self.get_loss(xs, y)
+                grads = nn.gradients(loss, [self.weights, self.function_bias, self.hidden_leaf_village, self.result_weight, self.layer2, self.bias2])
+                self.weights.update(grads[0], self.learning_rate)
+                self.function_bias.update(grads[1], self.learning_rate)
+                self.hidden_leaf_village.update(grads[2], self.learning_rate)
+                self.result_weight.update(grads[3], self.learning_rate)
+                self.layer2.update(grads[4], self.learning_rate)
+                self.bias2.update(grads[5], self.learning_rate)
+        
+        
