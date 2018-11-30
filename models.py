@@ -26,7 +26,7 @@ class PerceptronModel(object):
             x: a node with shape (1 x dimensions)
         Returns: a node containing a single number (the score)
         """
-        "*** YOUR CODE HERE ***"
+        return nn.DotProduct(x, self.w)
 
     def get_prediction(self, x):
         """
@@ -34,13 +34,22 @@ class PerceptronModel(object):
 
         Returns: 1 or -1
         """
-        "*** YOUR CODE HERE ***"
+        return 1 if nn.as_scalar(self.run(x)) >= 0 else -1
 
     def train(self, dataset):
         """
         Train the perceptron until convergence.
         """
-        "*** YOUR CODE HERE ***"
+        batch_size = 1
+        still_learning = True
+        while still_learning:
+            still_learning = False
+            for x, y in dataset.iterate_once(batch_size):
+                pred = self.get_prediction(x)
+                if pred != nn.as_scalar(y):
+                    still_learning = True
+                    self.w.update(x,nn.as_scalar(y))
+
 
 class RegressionModel(object):
     """
@@ -50,8 +59,14 @@ class RegressionModel(object):
     """
     def __init__(self):
         # Initialize your model parameters here
-        "*** YOUR CODE HERE ***"
-
+        self.batch_size = 10
+        self.learning_rate = -0.001
+        self.first_weights = nn.Parameter(1, 15)
+        self.fb = nn.Parameter(1,15)
+        self.second_weights = nn.Parameter(15, 10)
+        self.sb = nn.Parameter(1,10)
+        self.tw = nn.Parameter(10,1)
+        self.tb = nn.Parameter(1,1)
     def run(self, x):
         """
         Runs the model for a batch of examples.
@@ -61,8 +76,11 @@ class RegressionModel(object):
         Returns:
             A node with shape (batch_size x 1) containing predicted y-values
         """
-        "*** YOUR CODE HERE ***"
+        first = nn.AddBias(nn.Linear(x, self.first_weights), self.fb)
 
+        second = nn.AddBias(nn.Linear(nn.ReLU(first), self.second_weights), self.sb)
+        third = nn.AddBias(nn.Linear(nn.ReLU(second), self.tw), self.tb)
+        return third
     def get_loss(self, x, y):
         """
         Computes the loss for a batch of examples.
@@ -73,13 +91,33 @@ class RegressionModel(object):
                 to be used for training
         Returns: a loss node
         """
-        "*** YOUR CODE HERE ***"
+        return nn.SquareLoss(self.run(x), y)
 
     def train(self, dataset):
         """
         Trains the model.
         """
-        "*** YOUR CODE HERE ***"
+        still_learning = True
+        loss_diff = 999
+        last_loss = None
+        while still_learning:
+            for x, y in dataset.iterate_once(self.batch_size):
+                loss = self.get_loss(x, y)
+                still_learning = False
+                if last_loss:
+                    loss_diff = abs(nn.as_scalar(loss)-nn.as_scalar(last_loss))
+                last_loss = loss
+                if loss_diff > 0.00001:
+                    still_learning = True
+                    grads = nn.gradients(loss, [self.first_weights, self.fb, self.second_weights, self.sb, self.tw, self.tb])
+                    self.first_weights.update(grads[0], self.learning_rate)
+                    self.fb.update(grads[1], self.learning_rate)
+                    self.second_weights.update(grads[2], self.learning_rate)
+                    self.sb.update(grads[3], self.learning_rate)
+                    self.tw.update(grads[4], self.learning_rate)
+                    self.tb.update(grads[5], self.learning_rate)
+
+
 
 class DigitClassificationModel(object):
     """
@@ -97,8 +135,20 @@ class DigitClassificationModel(object):
     """
     def __init__(self):
         # Initialize your model parameters here
-        "*** YOUR CODE HERE ***"
+        self.layer_count = 4
+        self.learning_rate = -0.005
+        self.neurons = 100
+        self.batch_size = 25
+        self.fw = nn.Parameter(784, self.neurons)
+        self.fb = nn.Parameter(1, self.neurons)
+        self.layers = []
+        self.bias = []
+        for i in range(self.layer_count - 2):
+            self.layers.append(nn.Parameter(self.neurons, self.neurons))
+            self.bias.append(nn.Parameter(1,self.neurons))
 
+        self.lw = nn.Parameter(self.neurons, 10)
+        self.lb = nn.Parameter(1, 10)
     def run(self, x):
         """
         Runs the model for a batch of examples.
@@ -113,8 +163,11 @@ class DigitClassificationModel(object):
             A node with shape (batch_size x 10) containing predicted scores
                 (also called logits)
         """
-        "*** YOUR CODE HERE ***"
-
+        layered = nn.AddBias(nn.Linear(x, self.fw), self.fb)
+        for i in range(len(self.layers)):
+            layered = nn.AddBias(nn.Linear(nn.ReLU(layered), self.layers[i]), self.bias[i])
+        layered = nn.AddBias(nn.Linear(nn.ReLU(layered), self.lw), self.lb)
+        return layered
     def get_loss(self, x, y):
         """
         Computes the loss for a batch of examples.
@@ -128,13 +181,33 @@ class DigitClassificationModel(object):
             y: a node with shape (batch_size x 10)
         Returns: a loss node
         """
-        "*** YOUR CODE HERE ***"
-
+        return nn.SoftmaxLoss(self.run(x), y)
     def train(self, dataset):
         """
         Trains the model.
         """
-        "*** YOUR CODE HERE ***"
+        still_learning = True
+        cycles = 10
+        count = 0
+        while dataset.get_validation_accuracy() < 0.97:
+            count+=1
+            for x, y in dataset.iterate_once(self.batch_size):
+                loss = self.get_loss(x, y)
+                grads = nn.gradients(loss, [self.fw]+self.layers+[self.lw] + [self.fb]+self.bias+[self.lb])
+               
+                for i in range(len(grads)):
+                    if i == 0:
+                        self.fw.update(grads[0], self.learning_rate)
+                    elif i == len(self.layers)+1:
+                        self.lw.update(grads[i], self.learning_rate)
+                    elif i > 0 and i < len(self.layers)+1:
+                        self.layers[i-1].update(grads[i], self.learning_rate)
+                    elif i == len(self.layers)+2:
+                        self.fb.update(grads[i], self.learning_rate)
+                    elif i == len(grads)-1:
+                        self.lb.update(grads[i], self.learning_rate)
+                    else:
+                        self.bias[i-len(self.layers) - 3].update(grads[i], self.learning_rate)
 
 class LanguageIDModel(object):
     """
